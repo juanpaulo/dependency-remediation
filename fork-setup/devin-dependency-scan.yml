@@ -1,0 +1,123 @@
+# Copy this file into your Superset fork at .github/workflows/devin-dependency-scan.yml
+#
+# Runs pip-audit against Superset's pinned runtime dependencies and files ONE
+# issue per vulnerable package (not per CVE: four CVEs in one package should
+# be one upgrade, not four conflicting PRs). The target version is the highest
+# fix version across all of that package's advisories.
+#
+# The `devin:remediate` label is the approval gate: it fires the orchestrator
+# webhook and spends ACUs. By default every finding is filed with `triage`
+# and a human applies the label. To pre-approve packages, list them in the
+# `auto_remediate` input (or the AUTO_REMEDIATE repo variable), or use "all".
+# Packages with no released fix are filed for visibility only.
+name: Dependency vulnerability scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      auto_remediate:
+        description: 'Packages to send straight to Devin, comma-separated (e.g. "selenium,jinja2"), or "all"'
+        required: false
+        default: ""
+  schedule:
+    - cron: "0 21 * * 0"   # Mondays 06:00 JST
+  push:
+    paths: ["requirements/base.txt"]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run pip-audit
+        run: |
+          pip install --quiet pip-audit
+          # base.txt is fully pinned by uv, so audit the pins directly (fast, no install).
+          # Drop the editable local package, which pip-audit cannot resolve.
+          grep -v '^-e ' requirements/base.txt > /tmp/requirements.txt
+          pip-audit -r /tmp/requirements.txt --disable-pip --no-deps -f json -o /tmp/audit.json || true
+
+      - name: Ensure labels exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create "devin:remediate" --color 5319e7 --description "Devin will open a fix PR" 2>/dev/null || true
+          gh label create "security" --color d73a4a 2>/dev/null || true
+          gh label create "no-fix-available" --color cccccc 2>/dev/null || true
+          gh label create "triage" --color fbca04 --description "Approve by adding devin:remediate" 2>/dev/null || true
+
+      - name: File one issue per vulnerable package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTO_REMEDIATE: ${{ inputs.auto_remediate || vars.AUTO_REMEDIATE || '' }}
+        run: |
+          python - <<'EOF'
+          import json, os, subprocess
+          from packaging.version import Version
+
+          auto = {p.strip().lower() for p in os.environ.get("AUTO_REMEDIATE", "").split(",") if p.strip()}
+          audit = json.load(open("/tmp/audit.json"))
+          open_titles = json.loads(subprocess.check_output(
+              ["gh", "issue", "list", "--label", "security", "--state", "open",
+               "--limit", "200", "--json", "title"]))
+          open_titles = [i["title"] for i in open_titles]
+
+          for dep in audit.get("dependencies", []):
+              vulns = {v["id"]: v for v in dep.get("vulns") or []}.values()
+              if not vulns:
+                  continue
+              name, version = dep["name"], dep["version"]
+              if any(t.startswith(f"[Security] {name} ") for t in open_titles):
+                  print(f"skip {name}: open issue exists")
+                  continue
+
+              fixes = [f for v in vulns for f in v.get("fix_versions") or []]
+              target = str(max(Version(f) for f in fixes)) if fixes else None
+              ids = []
+              lines = []
+              for v in vulns:
+                  aliases = [a for a in v.get("aliases") or [] if a.startswith("CVE-")]
+                  label = aliases[0] if aliases else v["id"]
+                  ids.append(label)
+                  fixed = ", ".join(v.get("fix_versions") or []) or "no fix released"
+                  desc = (v.get("description") or "").strip().replace("\n", " ")
+                  lines.append(f"- **{label}** (fixed in {fixed}): {desc[:240]}")
+
+              n = len(ids)
+              title = (f"[Security] {name} {version}: {n} known "
+                       f"{'vulnerability' if n == 1 else 'vulnerabilities'}"
+                       + (f", upgrade to {target}" if target else ", no fix released"))
+              body = "\n".join([
+                  f"**Package:** `{name}` (currently {version})",
+                  f"**Fixed in:** {target}" if target else "**Fixed in:** no fixed release yet",
+                  "",
+                  "**Vulnerabilities:**",
+                  *lines,
+                  "",
+                  "**Acceptance criteria:**",
+                  f"- `{name}` is at {target} or later everywhere it is pinned" if target else "- Track upstream; no action possible yet",
+                  "- Calling code updated for any breaking or deprecated behavior",
+                  "- Relevant unit tests run and pass",
+                  "- PR references this issue",
+                  "",
+                  "_Filed by the dependency scan workflow._",
+              ])
+              if not target:
+                  labels = ["security", "no-fix-available"]
+              elif "all" in auto or name.lower() in auto:
+                  labels = ["security", "devin:remediate"]
+              else:
+                  labels = ["security", "triage"]
+              subprocess.run(["gh", "issue", "create", "--title", title, "--body", body,
+                              *sum((["--label", l] for l in labels), [])], check=True)
+              print(f"filed {name} -> {target}")
+          EOF

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="10">
+<title>Devin Remediation</title>
+<style>
+  :root {
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --hair: #e1e0d9; --border: rgba(11,11,11,0.10);
+    --good: #0ca30c; --warn: #fab219; --crit: #d03b3b; --review: #2a78d6; --idle: #c3c2b7;
+    --good-text: #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --hair: #2c2c2a; --border: rgba(255,255,255,0.10);
+      --review: #3987e5; --idle: #52514e; --good-text: #0ca30c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+         font: 14px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 32px 16px 56px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 32px 0 10px;
+       text-transform: uppercase; letter-spacing: .04em; }
+  .sub { color: var(--ink-2); }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+
+  .hero { display: grid; grid-template-columns: 1.3fr 3fr; gap: 12px; margin-top: 20px; }
+  .hero .big { padding: 20px; }
+  .big .n { font-size: 44px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .big .l { color: var(--ink-2); margin-top: 6px; }
+  .big .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .tile { padding: 14px 16px; }
+  .tile .n { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tile .l { color: var(--ink-2); font-size: 12px; }
+  .tile .h { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+  .pipe { padding: 16px; }
+  .bar { display: flex; gap: 2px; height: 14px; border-radius: 4px; overflow: hidden; background: var(--hair); }
+  .bar span { display: block; height: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; color: var(--ink-2); font-size: 12px; }
+
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .s-merged { background: var(--good); } .s-pr_open { background: var(--review); }
+  .s-running, .s-queued { background: var(--idle); } .s-closed { background: var(--muted); }
+  .s-needs_human { background: var(--warn); } .s-failed { background: var(--crit); }
+  .running-pulse { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--hair); white-space: nowrap; vertical-align: top; }
+  th { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.wrap { white-space: normal; min-width: 220px; }
+  tr:last-child td { border-bottom: 0; }
+  a { color: inherit; text-decoration-color: var(--muted); text-underline-offset: 2px; }
+  .reason { color: var(--ink-2); font-size: 12px; }
+  .ok { color: var(--good-text); font-weight: 600; } .bad { color: var(--crit); font-weight: 600; }
+  .muted { color: var(--muted); }
+
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .hero > *, .tiles > * { min-width: 0; }
+  .feed { list-style: none; margin: 0; padding: 8px 16px; }
+  .feed li { padding: 8px 0; border-bottom: 1px solid var(--hair); font-size: 13px; overflow-wrap: anywhere; }
+  .feed li:last-child { border-bottom: 0; }
+  .feed .when { color: var(--muted); font-size: 12px; }
+  .empty { padding: 28px; text-align: center; color: var(--muted); }
+
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: minmax(0, 1fr); }
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Dependency CVE remediation</h1>
+      <div class="sub">Issues labeled <code>devin:remediate</code> in <strong>{{ repo or "your fork" }}</strong> become pull requests</div>
+    </div>
+    <span class="pill">{{ "Simulated Devin" if mock else "Live Devin API" }} · refreshes every 10s</span>
+  </header>
+
+  {% set statuses = [("merged","Merged"),("pr_open","Awaiting review"),("running","Devin working"),("queued","Queued"),("needs_human","Needs a human"),("failed","Failed"),("closed","PR closed")] %}
+
+  <section class="hero">
+    <div class="card big">
+      <div class="n">{{ m.merged }}</div>
+      <div class="l">vulnerabilities fixed and merged</div>
+      <div class="note">
+        {% if m.merged %}≈ {{ m.est_hours_saved }} engineer-hours saved
+        (assumes {{ m.hours_saved_per_fix_assumption }}h per fix){% else %}Nothing merged yet{% endif %}
+      </div>
+    </div>
+    <div class="tiles">
+      <div class="card tile"><div class="n">{{ m.pr_open }}</div><div class="l">PRs awaiting review</div><div class="h">Devin is done, a human decides</div></div>
+      <div class="card tile"><div class="n">{{ m.needs_human }}</div><div class="l">Need a human</div><div class="h">blocked, timed out, or no PR</div></div>
+      <div class="card tile"><div class="n">{% if m.autonomy_rate is not none %}{{ (m.autonomy_rate*100)|round|int }}%{% else %}—{% endif %}</div><div class="l">Finished without help</div><div class="h">attempts that produced a PR</div></div>
+      <div class="card tile"><div class="n">{% if m.tests_pass_rate is not none %}{{ (m.tests_pass_rate*100)|round|int }}%{% else %}—{% endif %}</div><div class="l">PRs with passing tests</div><div class="h">reported by Devin per PR</div></div>
+      <div class="card tile"><div class="n">{% if m.median_min_to_pr is not none %}{{ m.median_min_to_pr }}m{% else %}—{% endif %}</div><div class="l">Median time to PR</div><div class="h">label applied to PR opened</div></div>
+      <div class="card tile"><div class="n">{% if m.cost_per_merged_fix_usd is not none %}${{ "%.2f"|format(m.cost_per_merged_fix_usd) }}{% else %}—{% endif %}</div><div class="l">Cost per merged fix</div><div class="h">all ACUs ÷ merged fixes</div></div>
+      <div class="card tile"><div class="n">{{ m.total_acus }}</div><div class="l">ACUs used</div><div class="h">≈ ${{ "%.2f"|format(m.total_cost_usd) }} at ${{ acu_price }}/ACU</div></div>
+      <div class="card tile"><div class="n">{{ m.code_change_count }}</div><div class="l">Needed code changes</div><div class="h">beyond the version bump</div></div>
+    </div>
+  </section>
+
+  <h2>Pipeline</h2>
+  <div class="card pipe">
+    {% if m.total %}
+    <div class="bar" role="img" aria-label="Status breakdown">
+      {% for key, label in statuses %}{% set c = m[key] if key in m else 0 %}{% if key == "running" %}{% set c = m.in_flight %}{% endif %}{% if key != "queued" and c %}
+      <span class="s-{{ key }}" style="flex: {{ c }}" title="{{ label }}: {{ c }}"></span>{% endif %}{% endfor %}
+    </div>
+    <div class="legend">
+      {% for key, label in statuses if key != "queued" %}{% set c = m.in_flight if key == "running" else m[key] %}
+      <span><span class="dot s-{{ key }}"></span>{{ label }} <strong>{{ c }}</strong></span>{% endfor %}
+    </div>
+    {% else %}<div class="muted">No issues processed yet.</div>{% endif %}
+  </div>
+
+  <div class="grid2">
+    <div>
+      <h2>Issues</h2>
+      <div class="card tablewrap">
+        {% if rows %}
+        <table>
+          <thead><tr><th>Issue</th><th>Vulnerability</th><th>Status</th><th>Tests</th><th>Pull request</th><th class="num">ACUs</th><th>Session</th></tr></thead>
+          <tbody>
+          {% for r in rows %}
+            <tr>
+              <td class="wrap"><a href="{{ r.issue_url }}" target="_blank">#{{ r.issue_number }}</a>
+                {% if r.attempt > 1 %}<span class="muted">· try {{ r.attempt }}</span>{% endif %}
+                <div class="reason">{{ r.package or "" }}{% if r.fixed_version %} → {{ r.fixed_version }}{% endif %}</div></td>
+              {% set vids = (r.vuln_id or "").split(", ") %}
+              <td title="{{ r.vuln_id or '' }}">{{ vids[0] or "—" }}{% if vids|length > 1 %} <span class="muted">+{{ vids|length - 1 }} more</span>{% endif %}</td>
+              <td><span class="dot s-{{ r.status }}{% if r.status == 'running' %} running-pulse{% endif %}"></span>{{ dict(statuses)[r.status] }}
+                {% if r.reason and r.status in ("needs_human","failed") %}<div class="reason">{{ r.reason }}</div>{% endif %}</td>
+              <td>{% if r.tests_passed == 1 %}<span class="ok">passed</span>{% elif r.tests_passed == 0 %}<span class="bad">failed</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>{% if r.pr_url %}<a href="{{ r.pr_url }}" target="_blank">#{{ r.pr_url.rsplit('/',1)[-1] }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td class="num">{{ "%.1f"|format(r.acus) }}</td>
+              <td>{% if r.devin_url %}<a href="{{ r.devin_url }}" target="_blank">open</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty">Label an issue <code>devin:remediate</code> in your fork, or run <code>scripts/simulate.sh</code>.</div>
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <h2>Activity</h2>
+      <div class="card">
+        {% if events %}
+        <ul class="feed">
+          {% for e in events %}
+          <li><strong>#{{ e.issue_number }}</strong> {{ e.kind.replace("_", " ") }}
+            <span class="when">· {{ ago(e.ts) }}</span>
+            {% if e.detail %}<div class="reason">{{ e.detail[:90] }}</div>{% endif %}</li>
+          {% endfor %}
+        </ul>
+        {% else %}<div class="empty">No activity yet.</div>{% endif %}
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
